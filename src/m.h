@@ -20,6 +20,7 @@ typedef struct {
 } vec2f_t;
 
 vec2f_t vec2f(float x, float y);
+float vec2f_dist(vec2f_t v1, vec2f_t v2);
 float vec2f_len(vec2f_t vec);
 vec2f_t vec2f_neg(vec2f_t vec);
 vec2f_t vec2f_normalize(vec2f_t vec);

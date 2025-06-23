@@ -25,6 +25,9 @@ fclean: clean
 
 re: fclean all
 
+$(MLX):
+	cd MLX42 && cmake -DDEBUG=1 -B build && cmake --build build -j4
+
 obj/%.o: src/%.c
 	@mkdir -p obj
 	$(CC) $(CFLAGS) -c -o $@ $^

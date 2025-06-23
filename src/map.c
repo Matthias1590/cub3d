@@ -1,6 +1,7 @@
 #include "map.h"
 #include "pool.h"
 #include <stdbool.h>
+#include <stdio.h>
 
 static vec2i_t get_map_size(const char *str)
 {
@@ -37,7 +38,12 @@ static bool read_map(map_t *map, const char *str)
 	while (str[i])
 	{
 		pos.x++;
-		if (str[i] == '\n')
+		if (str[i] == '\r')
+		{
+			// Ignore carriage return
+			pos.x--;
+		}
+		else if (str[i] == '\n')
 		{
 			pos.x = 0;
 			pos.y++;
@@ -82,5 +88,6 @@ map_t *map_from_str(pool_t *pool, const char *str)
 	if (!read_map(map, str))
 		return (pool_destroy(local_pool), NULL);
 	
+	pool_move(local_pool, map->tiles, pool);  // TODO: Not checked
 	return (pool_return(local_pool, map, pool));
 }

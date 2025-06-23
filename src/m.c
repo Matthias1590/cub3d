@@ -17,6 +17,11 @@ vec2f_t vec2f(float x, float y)
 	};
 }
 
+float vec2f_dist(vec2f_t v1, vec2f_t v2)
+{
+	return (sqrtf((v1.x - v2.x) * (v1.x - v2.x) + (v1.y - v2.y) * (v1.y - v2.y)));
+}
+
 float vec2f_len(vec2f_t vec)
 {
 	return (sqrtf(vec.x * vec.x + vec.y * vec.y));

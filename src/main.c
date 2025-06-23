@@ -9,6 +9,11 @@
 #define SCREEN_WIDTH 800
 #define SCREEN_HEIGHT 600
 #define MINIMAP_SCALE 40
+#define FOV_SCALE 0.66f
+
+mlx_t *g_mlx;
+state_t *g_state;
+mlx_image_t *g_img;
 
 void draw_rect(mlx_image_t *img, vec2i_t tl, vec2i_t size, uint32_t color)
 {
@@ -27,6 +32,23 @@ void draw_rect(mlx_image_t *img, vec2i_t tl, vec2i_t size, uint32_t color)
 	}
 }
 
+void draw_circle(mlx_image_t *img, vec2i_t center, int32_t radius, uint32_t color)
+{
+	for (int32_t y = -radius; y <= radius; y++)
+	{
+		for (int32_t x = -radius; x <= radius; x++)
+		{
+			if (x * x + y * y <= radius * radius)
+			{
+				int32_t px = center.x + x;
+				int32_t py = center.y + y;
+				if (px >= 0 && px < SCREEN_WIDTH && py >= 0 && py < SCREEN_HEIGHT)
+					mlx_put_pixel(img, px, py, color);
+			}
+		}
+	}
+}
+
 void draw_line(mlx_image_t *img, vec2i_t start, vec2i_t end, uint32_t color)
 {
 	int32_t dx = end.x - start.x;
@@ -35,7 +57,7 @@ void draw_line(mlx_image_t *img, vec2i_t start, vec2i_t end, uint32_t color)
 	if (dx != 0)
 	{
 		float y_slope = (float)dy / (float)dx;
-	
+
 		if (start.x > end.x)
 		{
 			vec2i_t temp = start;
@@ -55,7 +77,7 @@ void draw_line(mlx_image_t *img, vec2i_t start, vec2i_t end, uint32_t color)
 	if (dy != 0)
 	{
 		float x_slope = (float)dx / (float)dy;
-	
+
 		if (start.y > end.y)
 		{
 			vec2i_t temp = start;
@@ -98,20 +120,30 @@ void draw_map(mlx_image_t *img, map_t *map)
 			}
 		}
 	}
+}
 
-	// https://lodev.org/cgtutor/raycasting.html
-	double dirX = -1;
-	double dirY = 0;
-	double planeX = 0;
-	double planeY = 0.66;
-
-	for (int x = 0; x < SCREEN_WIDTH; x++)
+bool cast_ray(map_t *map, vec2f_t origin, vec2f_t dir, vec2f_t *hit)
+{
+	dir = vec2f_normalize(dir);
+	
+	for (size_t i = 0; i < 500; i++)
 	{
-		// [-1, 1] based on x
-		double cameraX = 2 * x / (double)SCREEN_WIDTH - 1;
-		double rayDirX = dirX + planeX * cameraX;
-		double rayDirY = dirY + planeY * cameraX;
+		if (map->tiles[(int)(origin.y) * map->size.x + (int)(origin.x)] == TILE_WALL)
+		{
+			*hit = origin;
+			return true;
+		}
+
+		origin.x += dir.x * 0.01f;
+		origin.y += dir.y * 0.01f;
+
+		if (origin.x < 0 || origin.x >= map->size.x || origin.y < 0 || origin.y >= map->size.y)
+		{
+			return false;
+		}
 	}
+
+	return false;
 }
 
 void draw_player(mlx_image_t *img, player_t player)
@@ -121,22 +153,73 @@ void draw_player(mlx_image_t *img, player_t player)
 
 	draw_rect(img, vec2i(center.x - MINIMAP_SCALE/2, center.y - MINIMAP_SCALE/2), vec2i(MINIMAP_SCALE, MINIMAP_SCALE), 0xff0000ff);
 	draw_line(img, vec2i(center.x, center.y), vec2i(ahead.x, ahead.y), 0xff0000ff);
+
+	// https://lodev.org/cgtutor/raycasting.html
+	vec2f_t dir = vec2f_from_rot(player.yaw);
+	vec2f_t right = vec2f_rot90(dir);
+
+	for (int x = 0; x < SCREEN_WIDTH; x++)
+	{
+		// [-1, 1] based on x
+		float camera_x = 2 * x / (double)SCREEN_WIDTH - 1;
+		vec2f_t ray_dir = vec2f_add(dir, vec2f_scale(right, FOV_SCALE * camera_x));
+
+		vec2f_t t = vec2f_add(center, vec2f_scale(right, FOV_SCALE * camera_x * MINIMAP_SCALE));
+		draw_line(img, vec2i(center.x, center.y), vec2i(t.x, t.y), 0xff0000ff);
+
+		// draw_line(img, vec2i(center.x, center.y), vec2i(center.x + ray_dir.x * MINIMAP_SCALE * 10, center.y + ray_dir.y * MINIMAP_SCALE * 10), 0xff00ffff);
+
+		vec2f_t hit;
+		vec2f_t origin = player.position;
+		if (cast_ray(g_state->scene->map, origin, ray_dir, &hit))
+		{
+			draw_circle(img, vec2i(hit.x * MINIMAP_SCALE, hit.y * MINIMAP_SCALE), 3, 0xff0000ff);
+		}
+	}
 }
 
-void draw_scene(mlx_image_t *img, scene_t *scene)
+void draw_minimap(mlx_image_t *img, scene_t *scene)
 {
 	draw_map(img, scene->map);
 	draw_player(img, scene->player);
 }
 
-mlx_t *g_mlx;
-state_t *g_state;
-mlx_image_t *g_img;
+void draw_scene(mlx_image_t *img, scene_t *scene)
+{
+	draw_rect(img, vec2i(0, 0), vec2i(SCREEN_WIDTH, SCREEN_HEIGHT), scene->ceiling_color);
+	draw_rect(img, vec2i(0, SCREEN_HEIGHT / 2), vec2i(SCREEN_WIDTH, SCREEN_HEIGHT / 2), scene->floor_color);
+
+	vec2f_t dir = vec2f_from_rot(scene->player.yaw);
+	vec2f_t right = vec2f_rot90(dir);
+
+	for (int x = 0; x < SCREEN_WIDTH; x++)
+	{
+		// [-1, 1] based on x
+		float camera_x = -2 * x / (double)SCREEN_WIDTH + 1;
+		vec2f_t ray_dir = vec2f_normalize(vec2f_add(dir, vec2f_scale(right, FOV_SCALE * camera_x)));
+
+		vec2f_t hit;
+		vec2f_t origin = scene->player.position;
+		if (cast_ray(scene->map, origin, ray_dir, &hit))
+		{
+			float dist = vec2f_dist(scene->player.position, hit);
+			int height = (int)(SCREEN_HEIGHT / dist);
+			int start_y = (SCREEN_HEIGHT - height) / 2;
+			int end_y = start_y + height;
+			if (end_y > SCREEN_HEIGHT)
+				end_y = SCREEN_HEIGHT;
+			if (start_y < 0)
+				start_y = 0;
+			draw_line(img, vec2i(x, start_y), vec2i(x, end_y), 0xff0000ff);
+		}
+	}
+}
 
 void draw_state(mlx_image_t *img, state_t *state)
 {
 	draw_rect(img, vec2i(0, 0), vec2i(SCREEN_WIDTH, SCREEN_HEIGHT), 0x000000ff);
 
+	// draw_minimap(img, state->scene);
 	draw_scene(img, state->scene);
 }
 
@@ -193,7 +276,7 @@ int main(void)
 	if (!g_mlx)
 		return (1);
 
-	g_state->scene = scene_from_file(g_state->static_pool, "scenes/test.cub");
+	g_state->scene = scene_from_file(g_state->static_pool, "./scenes/test.cub");
 	if (!g_state->scene)
 		return (1);
 

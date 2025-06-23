@@ -75,6 +75,10 @@ scene_t *scene_from_file(pool_t *pool, const char *path)
 	if (!player_from_str(file_content, &scene->player))
 		return (pool_destroy(local_pool), NULL);
 
+	scene->floor_color = 0x00ff00ff;  // Default floor color
+	scene->ceiling_color = 0x0000ffff;  // Default ceiling color
+
+	pool_move(local_pool, scene->map->tiles, pool);  // TODO: Not checked
 	pool_move(local_pool, scene->map, pool);  // TODO: Not checked
 	return (pool_return(local_pool, scene, pool));
 }
