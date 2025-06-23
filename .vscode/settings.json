@@ -1,0 +1,15 @@
+{
+	"files.associations": {
+		"mlx_int.h": "c",
+		"io.h": "c",
+		"unistd.h": "c",
+		"pool.h": "c",
+		"str.h": "c",
+		"tile.h": "c",
+		"math.h": "c",
+		"stdio.h": "c",
+		"state.h": "c",
+		"compare": "c",
+		"m.h": "c"
+	}
+}
