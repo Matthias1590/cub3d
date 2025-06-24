@@ -11,5 +11,6 @@
 		"state.h": "c",
 		"compare": "c",
 		"m.h": "c"
-	}
+	},
+	"cmake.ignoreCMakeListsMissing": true
 }

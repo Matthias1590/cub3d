@@ -2,6 +2,15 @@
 
 #include <stdint.h>
 
+#define EPS 0.0001f
+
+typedef enum {
+	DIR_NORTH,
+	DIR_EAST,
+	DIR_SOUTH,
+	DIR_WEST,
+} dir_t;
+
 typedef struct {
 	float rads;
 } rot_t;

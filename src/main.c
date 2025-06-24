@@ -122,24 +122,91 @@ void draw_map(mlx_image_t *img, map_t *map)
 	}
 }
 
-bool cast_ray(map_t *map, vec2f_t origin, vec2f_t dir, vec2f_t *hit)
+// def get_next_horizontal(x, y, dir_x, dir_y):
+// 	y_slope = dir_y / dir_x
+// 	if dir_x >= 0:
+// 		next_x = math.ceil(x)
+// 	else:
+// 		next_x = math.floor(x)
+// 	moved_x = (next_x - x)
+// 	return (next_x, y + moved_x * y_slope)
+
+vec2f_t get_next_horizontal(vec2f_t p, vec2f_t dir)
+{
+	float y_slope = dir.y / dir.x;
+	float next_x = (dir.x >= 0) ? ceilf(p.x) : floorf(p.x);
+	float moved_x = (next_x - p.x);
+	return vec2f(next_x, p.y + moved_x * y_slope);
+}
+
+// def get_next_vertical(x, y, dir_x, dir_y):
+// 	x_slope = dir_x / dir_y
+// 	if dir_y >= 0:
+// 		next_y = math.ceil(y)
+// 	else:
+// 		next_y = math.floor(y)
+// 	moved_y = (next_y - y)
+// 	return (x + moved_y * x_slope, next_y)
+
+vec2f_t get_next_vertical(vec2f_t p, vec2f_t dir)
+{
+	float x_slope = dir.x / dir.y;
+	float next_y = (dir.y >= 0) ? ceilf(p.y) : floorf(p.y);
+	float moved_y = (next_y - p.y);
+	return vec2f(p.x + moved_y * x_slope, next_y);
+}
+
+bool cast_ray(map_t *map, vec2f_t origin, vec2f_t dir, vec2f_t *hit, dir_t *hit_dir)
 {
 	dir = vec2f_normalize(dir);
 	
 	for (size_t i = 0; i < 500; i++)
 	{
-		if (map->tiles[(int)(origin.y) * map->size.x + (int)(origin.x)] == TILE_WALL)
+		vec2f_t p = origin;
+		bool horizontal = false;
+		for (size_t i = 0; i < 10; i++)
 		{
-			*hit = origin;
-			return true;
-		}
+			vec2f_t next_horizontal = get_next_horizontal(p, dir);
+			vec2f_t next_vertical = get_next_vertical(p, dir);
 
-		origin.x += dir.x * 0.01f;
-		origin.y += dir.y * 0.01f;
+			if (vec2f_dist(p, next_horizontal) < vec2f_dist(p, next_vertical))
+			{
+				p = next_horizontal;
+				horizontal = true;
+			}
+			else
+			{
+				p = next_vertical;
+				horizontal = false;
+			}
 
-		if (origin.x < 0 || origin.x >= map->size.x || origin.y < 0 || origin.y >= map->size.y)
-		{
-			return false;
+			p = vec2f_add(p, vec2f_scale(dir, EPS));
+
+			if (p.x < 0 || p.x >= map->size.x || p.y < 0 || p.y >= map->size.y)
+				return false;
+			if (map->tiles[(int)p.y * map->size.x + (int)p.x] == TILE_WALL)
+			{
+				if (hit)
+					*hit = p;
+				if (hit_dir)
+				{
+					if (horizontal)
+					{
+						if (dir.x > 0)
+							*hit_dir = DIR_WEST;
+						else
+							*hit_dir = DIR_EAST;
+					}
+					else
+					{
+						if (dir.y > 0)
+							*hit_dir = DIR_NORTH;
+						else
+							*hit_dir = DIR_SOUTH;
+					}
+				}
+				return true;
+			}
 		}
 	}
 
@@ -171,7 +238,7 @@ void draw_player(mlx_image_t *img, player_t player)
 
 		vec2f_t hit;
 		vec2f_t origin = player.position;
-		if (cast_ray(g_state->scene->map, origin, ray_dir, &hit))
+		if (cast_ray(g_state->scene->map, origin, ray_dir, &hit, NULL))
 		{
 			draw_circle(img, vec2i(hit.x * MINIMAP_SCALE, hit.y * MINIMAP_SCALE), 3, 0xff0000ff);
 		}
@@ -182,6 +249,38 @@ void draw_minimap(mlx_image_t *img, scene_t *scene)
 {
 	draw_map(img, scene->map);
 	draw_player(img, scene->player);
+}
+
+mlx_image_t *g_wall_north;
+mlx_image_t *g_wall_south;
+mlx_image_t *g_wall_east;
+mlx_image_t *g_wall_west;
+
+float inverse_lerp(float a, float b, float value) {
+    return (value - a) / (b - a);
+}
+
+void draw_texture_slice(mlx_image_t *img, mlx_image_t *texture, int x, int start_y, int end_y, float uv)
+{
+	uint32_t texture_x = (uint32_t)(uv * (texture->width - 1));
+	assert(texture_x < texture->width);
+
+	for (int y = start_y; y < end_y; y++)
+	{
+		if (y < 0 || y >= SCREEN_HEIGHT)
+			continue;
+
+		uint32_t texture_y = (uint32_t)(inverse_lerp(start_y, end_y, y) * texture->height);
+		assert(texture_y < texture->height);
+
+		uint32_t color = *(uint32_t *)(texture->pixels + (texture_y * texture->width + texture_x) * sizeof(uint32_t));
+		mlx_put_pixel(img, x, y, color);
+	}
+}
+
+float get_fract(float value)
+{
+	return value - floorf(value);
 }
 
 void draw_scene(mlx_image_t *img, scene_t *scene)
@@ -199,18 +298,37 @@ void draw_scene(mlx_image_t *img, scene_t *scene)
 		vec2f_t ray_dir = vec2f_normalize(vec2f_add(dir, vec2f_scale(right, FOV_SCALE * camera_x)));
 
 		vec2f_t hit;
+		dir_t hit_dir;
 		vec2f_t origin = scene->player.position;
-		if (cast_ray(scene->map, origin, ray_dir, &hit))
+		if (cast_ray(scene->map, origin, ray_dir, &hit, &hit_dir))
 		{
 			float dist = vec2f_dist(scene->player.position, hit);
-			int height = (int)(SCREEN_HEIGHT / dist);
+			float height = SCREEN_HEIGHT / dist;
 			int start_y = (SCREEN_HEIGHT - height) / 2;
 			int end_y = start_y + height;
-			if (end_y > SCREEN_HEIGHT)
-				end_y = SCREEN_HEIGHT;
-			if (start_y < 0)
-				start_y = 0;
-			draw_line(img, vec2i(x, start_y), vec2i(x, end_y), 0xff0000ff);
+			float uv = 0;
+			mlx_image_t *texture;
+			if (hit_dir == DIR_WEST)
+			{
+				uv = get_fract(hit.y);
+				texture = g_wall_west;
+			}
+			else if (hit_dir == DIR_EAST)
+			{
+				uv = 1.0f - get_fract(hit.y);
+				texture = g_wall_east;
+			}
+			else if (hit_dir == DIR_NORTH)
+			{
+				uv = 1.0f - get_fract(hit.x);
+				texture = g_wall_north;
+			}
+			else // DIR_SOUTH
+			{
+				uv = get_fract(hit.x);
+				texture = g_wall_south;
+			}
+			draw_texture_slice(img, texture, x, start_y, end_y, uv);
 		}
 	}
 }
@@ -279,6 +397,15 @@ int main(void)
 	g_state->scene = scene_from_file(g_state->static_pool, "./scenes/test.cub");
 	if (!g_state->scene)
 		return (1);
+	
+	mlx_texture_t *north_tex = mlx_load_png("./assets/wall.png");
+	g_wall_north = mlx_texture_to_image(g_mlx, north_tex);
+	mlx_texture_t *south_tex = mlx_load_png("./assets/wall.png");
+	g_wall_south = mlx_texture_to_image(g_mlx, south_tex);
+	mlx_texture_t *east_tex = mlx_load_png("./assets/wall.png");
+	g_wall_east = mlx_texture_to_image(g_mlx, east_tex);
+	mlx_texture_t *west_tex = mlx_load_png("./assets/wall.png");
+	g_wall_west = mlx_texture_to_image(g_mlx, west_tex);
 
 	g_img = mlx_new_image(g_mlx, SCREEN_WIDTH, SCREEN_HEIGHT);
 	mlx_image_to_window(g_mlx, g_img, 0, 0);
